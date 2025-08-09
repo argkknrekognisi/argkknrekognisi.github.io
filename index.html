@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rain Gauge Dashboard</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <h2>Rain Gauge Dashboard</h2>
+
+  <div class="statusbar">
+    <div id="statusDot" class="dot offline"></div>
+    <div id="statusText" class="status-text">OFFLINE</div>
+  </div>
+
+  <div id="clock">--:--:--</div>
+  <div id="lastUpdated">Last updated: —</div>
+
+  <div class="card">
+    <div class="metric">
+      <div class="label">Temperature</div>
+      <div class="value">
+        <span id="t">⏳</span>
+        <span class="trend steady" id="tTrend">—</span>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Humidity</div>
+      <div class="value">
+        <span id="h">⏳</span>
+        <span class="trend steady" id="hTrend">—</span>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Pressure</div>
+      <div class="value">
+        <span id="p">⏳</span>
+        <span class="trend steady" id="pTrend">—</span>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Rainfall (this interval)</div>
+      <div class="value">
+        <span id="r">⏳</span>
+        <span class="unit">mm</span>
+        <span class="trend steady" id="rTrend">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart.js + chart canvas -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <div class="chart-container">
+    <canvas id="rainChart" width="400" height="200"></canvas>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
