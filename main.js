@@ -1,11 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ===== Supabase (PUT YOUR PROJECT + ANON KEY) =====
+// ===== Supabase (PUT YOUR PROJECT URL + ANON KEY) =====
 const supabase = createClient(
   "https://scbekobcwdxrfvdiofjp.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM"
 );
-// ================================================
+// ======================================================
 
 let lastTimestamp = null;
 let prev = { temperature: null, humidity: null, pressure: null, rainfall_mm: null };
@@ -64,7 +64,7 @@ initChart();
 
 // ---------- Initial load (preload last 20) ----------
 const { data: rows, error } = await supabase
-  .from("weather_readings")          // if your table has a hyphen: "weather-readings"
+  .from("weather_readings")          // if your table uses hyphen: "weather-readings"
   .select("*")
   .order("created_at", { ascending: false })
   .limit(20);
@@ -139,7 +139,7 @@ function render(r) {
   const ts = r.created_at ?? new Date().toISOString();
   document.getElementById("lastUpdated").textContent = `Last updated: ${formatLocalTime(ts)}`;
 
-  // Chart point (use rainfall; 0 if null)
+  // Chart point (rainfall; 0 if null)
   if (chart) {
     chartData.labels.push(formatClock(new Date(ts)));
     chartData.datasets[0].data.push(r.rainfall_mm ?? 0);
