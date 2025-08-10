@@ -13,10 +13,7 @@ let prev = { temperature: null, humidity: null, pressure: null, rainfall_mm: nul
 // ---------- Utils ----------
 const pad2 = n => String(n).padStart(2,'0');
 const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-const formatLocalTime = iso => {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString()} ${formatClock(d)}`;
-};
+const formatLocalTime = iso => { const d = new Date(iso); return `${d.toLocaleDateString()} ${formatClock(d)}`; };
 function setTrend(el, delta, epsilon = 0.01) {
   el.classList.remove('up','down','steady');
   if (delta > epsilon) { el.textContent = '↑'; el.classList.add('up'); }
@@ -30,41 +27,48 @@ function setStatus(online) {
   else { dot.classList.remove('online'); dot.classList.add('offline'); txt.textContent = 'OFFLINE'; }
 }
 
-// ---------- Chart.js setup ----------
-let chart;
-let chartData = {
-  labels: [],
-  datasets: [{
-    label: "Rainfall (mm)",
-    data: [],
-    borderColor: "#00ffc3",
-    backgroundColor: "rgba(0,255,195,0.2)",
-    fill: true,
-    tension: 0.25
-  }]
-};
-function initChart() {
-  const ctx = document.getElementById("rainChart").getContext("2d");
-  chart = new Chart(ctx, {
+// ---------- Chart.js helpers ----------
+function getCSS(varName, fallback){ return getComputedStyle(document.body).getPropertyValue(varName).trim() || fallback; }
+function gridColor(){ return (getCSS('--muted','#6b7280')) + '22'; } // faint grid
+function mkChart(ctx, label) {
+  const border = getCSS('--value','#38bdf8');
+  return new Chart(ctx, {
     type: "line",
-    data: chartData,
+    data: { labels: [], datasets: [{
+      label, data: [], borderColor: border, backgroundColor: "rgba(56,189,248,0.18)",
+      fill: true, tension: 0.25, pointRadius: 2
+    }]},
     options: {
-      responsive: true,
-      plugins: {
-        legend: { labels: { color: "#f0f0f0" } }
-      },
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: getCSS('--text','#0f172a') } } },
       scales: {
-        x: { ticks: { color: "#aaa" } },
-        y: { ticks: { color: "#aaa" } }
+        x: { ticks: { color: getCSS('--muted','#6b7280') }, grid: { color: gridColor() } },
+        y: { ticks: { color: getCSS('--muted','#6b7280') }, grid: { color: gridColor() } }
       }
     }
   });
 }
-initChart();
+
+// Create charts
+const tempChart = mkChart(document.getElementById("tempChart").getContext("2d"), "°C");
+const humChart  = mkChart(document.getElementById("humChart").getContext("2d"),  "%");
+const presChart = mkChart(document.getElementById("presChart").getContext("2d"), "hPa");
+const rainChart = mkChart(document.getElementById("rainChart").getContext("2d"), "mm");
+
+// Append point helper (keeps last 20)
+function pushPoint(chart, ts, val){
+  chart.data.labels.push(formatClock(new Date(ts)));
+  chart.data.datasets[0].data.push(val);
+  if (chart.data.labels.length > 20) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update();
+}
 
 // ---------- Initial load (preload last 20) ----------
 const { data: rows, error } = await supabase
-  .from("weather_readings")          // if your table uses hyphen: "weather-readings"
+  .from("weather_readings")          // if your table uses a hyphen: "weather-readings"
   .select("*")
   .order("created_at", { ascending: false })
   .limit(20);
@@ -72,9 +76,12 @@ const { data: rows, error } = await supabase
 if (error) console.error(error);
 
 if (rows?.length) {
-  // Render oldest → newest
   rows.reverse().forEach(r => {
     render(r);
+    if (r.temperature != null) pushPoint(tempChart, r.created_at, Number(r.temperature));
+    if (r.humidity    != null) pushPoint(humChart,  r.created_at, Number(r.humidity));
+    if (r.pressure    != null) pushPoint(presChart, r.created_at, Number(r.pressure));
+    pushPoint(rainChart, r.created_at, Number(r.rainfall_mm ?? 0));
     lastTimestamp = r.created_at;
   });
   setStatus(true);
@@ -88,11 +95,15 @@ await channel
   .on("postgres_changes", {
     event: "INSERT",
     schema: "public",
-    table: "weather_readings"       // if hyphen table: "weather-readings"
+    table: "weather_readings"       // or "weather-readings"
   }, (payload) => {
     const row = payload.new;
     if (row.created_at !== lastTimestamp) {
       render(row);
+      if (row.temperature != null) pushPoint(tempChart, row.created_at, Number(row.temperature));
+      if (row.humidity    != null) pushPoint(humChart,  row.created_at, Number(row.humidity));
+      if (row.pressure    != null) pushPoint(presChart, row.created_at, Number(row.pressure));
+      pushPoint(rainChart, row.created_at, Number(row.rainfall_mm ?? 0));
       lastTimestamp = row.created_at;
       setStatus(true);
     }
@@ -101,7 +112,6 @@ await channel
 
 // ---------- Render ----------
 function render(r) {
-  // Values + trends
   if (r.temperature != null) {
     const el = document.getElementById("t");
     const trendEl = document.getElementById("tTrend");
@@ -135,20 +145,8 @@ function render(r) {
     prev.rainfall_mm = r.rainfall_mm;
   }
 
-  // Last updated
   const ts = r.created_at ?? new Date().toISOString();
   document.getElementById("lastUpdated").textContent = `Last updated: ${formatLocalTime(ts)}`;
-
-  // Chart point (rainfall; 0 if null)
-  if (chart) {
-    chartData.labels.push(formatClock(new Date(ts)));
-    chartData.datasets[0].data.push(r.rainfall_mm ?? 0);
-    if (chartData.labels.length > 20) {
-      chartData.labels.shift();
-      chartData.datasets[0].data.shift();
-    }
-    chart.update();
-  }
 }
 
 // ---------- Live clock ----------
@@ -159,8 +157,7 @@ function render(r) {
 
 // ---------- Online/Offline watchdog ----------
 (function startWatchdog(){
-  // Mark OFFLINE if no new data > 120s
-  const TIMEOUT_MS = 120000;
+  const TIMEOUT_MS = 120000; // 2 minutes
   setInterval(() => {
     if (!lastTimestamp) return;
     const age = Date.now() - new Date(lastTimestamp).getTime();

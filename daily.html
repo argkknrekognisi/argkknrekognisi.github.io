@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily Rainfall Totals</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="light">
+
+  <!-- Shared header mount -->
+  <div id="site-header"></div>
+
+  <main class="container">
+    <section class="header-block">
+      <h2>Daily Rainfall Totals</h2>
+      <div class="meta">
+        <div id="clock">--:--:--</div>
+        <div id="lastUpdated">Aggregated from per-interval data</div>
+      </div>
+    </section>
+
+    <section class="card chart-card">
+      <div class="chart-title">Last 30 days (mm)</div>
+      <canvas id="dailyRainChart"></canvas>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module">
+    import { injectHeader } from './partials/include.js';
+    await injectHeader();
+
+    // Live clock
+    (function startClock(){
+      const el = document.getElementById("clock");
+      const pad2 = n => String(n).padStart(2,'0');
+      const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      setInterval(() => el.textContent = formatClock(new Date()), 1000);
+    })();
+
+    // Supabase read + chart
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    const supabase = createClient("https://scbekobcwdxrfvdiofjp.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM");
+
+    const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
+    const grid = ()=> css('--muted','#6b7280')+'22';
+
+    const { data, error } = await supabase
+      .from("weather_readings")  // or "weather-readings"
+      .select("created_at, rainfall_mm")
+      .order("created_at", { ascending: true });
+
+    if (error) console.error(error);
+
+    // Sum per local day (last 30 days)
+    const totals = {};
+    const today = new Date();
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
+
+    data?.forEach(row => {
+      const ts = new Date(row.created_at);
+      if (ts < cutoff) return;
+      const key = ts.toLocaleDateString();
+      totals[key] = (totals[key] || 0) + (row.rainfall_mm || 0);
+    });
+
+    const labels = Object.keys(totals);
+    const values = Object.values(totals);
+
+    const ctx = document.getElementById("dailyRainChart").getContext("2d");
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: "Rainfall (mm)",
+          data: values,
+          backgroundColor: "rgba(56,189,248,0.6)"
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
+        scales: {
+          x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() } },
+          y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Retint on theme change
+    const mo = new MutationObserver(() => {
+      chart.options.plugins.legend.labels.color = css('--text','#0f172a');
+      chart.options.scales.x.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.x.grid.color = grid();
+      chart.options.scales.y.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.y.grid.color = grid();
+      chart.update('none');
+    });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  </script>
+</body>
+</html>
