@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ===== Supabase (PUT YOUR PROJECT URL + ANON KEY) =====
 const supabase = createClient(
-  "https://scbekobcwdxrfvdiofjp.supabase.co/rest/v1/weather_readings",
+  "https://scbekobcwdxrfvdiofjp.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM"
 );
 // ======================================================
@@ -275,3 +275,4 @@ const mo = new MutationObserver(() => {
   rainChart.update('none');
 });
 mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
