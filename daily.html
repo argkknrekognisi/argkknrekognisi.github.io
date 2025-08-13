@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="light">
+
+  <!-- Shared header mount -->
   <div id="site-header"></div>
 
   <main class="container">
@@ -27,83 +29,77 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module">
-    import { injectHeader } from './partials/include.js?v=13';
+    import { injectHeader } from './partials/include.js';
     await injectHeader();
 
-    // Clock
-    const pad2 = n => String(n).padStart(2,'0');
-    const clockFmt = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-    setInterval(()=> (document.getElementById("clock").textContent = clockFmt(new Date())), 1000);
+    // Live clock
+    (function startClock(){
+      const el = document.getElementById("clock");
+      const pad2 = n => String(n).padStart(2,'0');
+      const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      setInterval(() => el.textContent = formatClock(new Date()), 1000);
+    })();
 
-    // Supabase config
-    const PROJECT_URL = "https://scbekobcwdxrfvdiofjp.supabase.co";
-    const ANON_KEY    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM";
-    const DAILY_RESET_HOUR_LOCAL = 7;   // match device reset 07:00 WIB
-    const HAS_INTERVAL_COLUMN = true;   // we send rainfall_mm_interval from ESP32
-
+    // Supabase read + chart
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-    const supabase = createClient(PROJECT_URL, ANON_KEY);
+    const supabase = createClient("https://scbekobcwdxrfvdiofjp.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM");
 
     const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
-    const gridColor = () => {
-      const v = css('--muted','#6b7280');
-      return v.startsWith('hsl') ? v.replace(')', ' / 0.22)') : (v + '22');
-    };
-    function showErrorBanner(msg){
-      let b=document.getElementById('errBanner'); if(!b){b=document.createElement('div');b.id='errBanner';b.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px 12px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15);font:600 13px/1.3 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:9999;';document.body.appendChild(b);} b.textContent=msg; setTimeout(()=>{try{b.remove();}catch{}},8000);
-    }
+    const grid = ()=> css('--muted','#6b7280')+'22';
 
-    let resolvedTable='weather_readings';
-    async function resolveTable(selectCols){
-      let r=await supabase.from('weather_readings').select(selectCols).limit(1);
-      if(!r.error){resolvedTable='weather_readings';return;}
-      r=await supabase.from('weather-readings').select(selectCols).limit(1);
-      if(!r.error){resolvedTable='weather-readings';return;}
-      showErrorBanner('Cannot read table. Check RLS & table name.');
-    }
+    const { data, error } = await supabase
+      .from("weather_readings")  // or "weather-readings"
+      .select("created_at, rainfall_mm")
+      .order("created_at", { ascending: true });
 
-    const cols = HAS_INTERVAL_COLUMN
-      ? "created_at, ts, rainfall_mm, rainfall_mm_interval"
-      : "created_at, ts, rainfall_mm";
-    await resolveTable(cols);
-
-    const { data, error } = await supabase.from(resolvedTable).select(cols).order("created_at", { ascending: true });
     if (error) console.error(error);
 
-    const dayTotals = new Map();   // key -> sum(intervals)
-    const dayMaxCum = new Map();   // fallback if no interval
-    function dayKeyWithReset(date){
-      const d=new Date(date), shift=DAILY_RESET_HOUR_LOCAL*3600*1000;
-      const s=new Date(d.getTime()-shift);
-      const y=s.getFullYear(), m=String(s.getMonth()+1).padStart(2,'0'), dd=String(s.getDate()).padStart(2,'0');
-      return `${y}-${m}-${dd}`;
-    }
+    // Sum per local day (last 30 days)
+    const totals = {};
+    const today = new Date();
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
 
-    (data||[]).forEach(row=>{
-      const ts=row.ts ?? row.created_at; if(!ts) return;
-      const key=dayKeyWithReset(new Date(ts));
-      if (HAS_INTERVAL_COLUMN && row.rainfall_mm_interval!=null){
-        const v=Number(row.rainfall_mm_interval)||0;
-        dayTotals.set(key,(dayTotals.get(key)||0)+v);
-      } else {
-        const cum=Number(row.rainfall_mm||0);
-        dayMaxCum.set(key, Math.max(dayMaxCum.get(key)||0, cum));
+    data?.forEach(row => {
+      const ts = new Date(row.created_at);
+      if (ts < cutoff) return;
+      const key = ts.toLocaleDateString();
+      totals[key] = (totals[key] || 0) + (row.rainfall_mm || 0);
+    });
+
+    const labels = Object.keys(totals);
+    const values = Object.values(totals);
+
+    const ctx = document.getElementById("dailyRainChart").getContext("2d");
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: "Rainfall (mm)",
+          data: values,
+          backgroundColor: "rgba(56,189,248,0.6)"
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
+        scales: {
+          x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() } },
+          y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() }, beginAtZero: true }
+        }
       }
     });
-    if (!HAS_INTERVAL_COLUMN) dayMaxCum.forEach((v,k)=>dayTotals.set(k,v));
 
-    const labels=[], values=[];
-    const today=new Date(); const cutoff=new Date(today); cutoff.setDate(cutoff.getDate()-30);
-    [...dayTotals.entries()].sort(([a],[b])=>a.localeCompare(b)).forEach(([k,v])=>{
-      const d=new Date(k+"T00:00:00"); if(d>=cutoff){labels.push(k); values.push(v);}
+    // Retint on theme change
+    const mo = new MutationObserver(() => {
+      chart.options.plugins.legend.labels.color = css('--text','#0f172a');
+      chart.options.scales.x.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.x.grid.color = grid();
+      chart.options.scales.y.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.y.grid.color = grid();
+      chart.update('none');
     });
-
-    const ctx=document.getElementById("dailyRainChart").getContext("2d");
-    const chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:"Daily rainfall (mm)",data:values,backgroundColor:"rgba(56,189,248,0.6)"}]},options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:css('--text','#0f172a')}}},
-      scales:{x:{ticks:{color:css('--muted','#6b7280')},grid:{color:gridColor()}},y:{beginAtZero:true,ticks:{color:css('--muted','#6b7280')},grid:{color:gridColor()}}}
-    }});
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   </script>
 </body>
 </html>
