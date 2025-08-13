@@ -83,16 +83,18 @@
     </section>
   </main>
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Modules -->
-  <script type="module" src="partials/include.js"></script>
-  <script type="module">
-    import { injectHeader } from './partials/include.js';
-    await injectHeader();
-    // load the dashboard logic
-    await import('./main.js');
-  </script>
+<!-- Shared header include (cache-busted) -->
+<script type="module" src="partials/include.js?v=8"></script>
+
+<!-- Dashboard logic (cache-busted) -->
+<script type="module">
+  import { injectHeader } from './partials/include.js?v=8';
+  await injectHeader();
+  await import('./main.js?v=8');
+</script>
 </body>
 </html>
+
