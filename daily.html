@@ -17,7 +17,7 @@
       <h2>Daily Rainfall Totals</h2>
       <div class="meta">
         <div id="clock">--:--:--</div>
-        <div id="lastUpdated">Aggregated from per-interval data</div>
+        <div id="lastUpdated">Aggregated from 10-minute data</div>
       </div>
     </section>
 
@@ -28,6 +28,8 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script type="module" src="partials/include.js"></script>
   <script type="module">
     import { injectHeader } from './partials/include.js';
     await injectHeader();
@@ -42,32 +44,62 @@
 
     // Supabase read + chart
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-    const supabase = createClient("https://scbekobcwdxrfvdiofjp.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM");
+    const supabase = createClient("https://YOUR_PROJECT.supabase.co", "YOUR_ANON_PUBLIC_KEY");
+
+    // set true if your table has rainfall_mm_interval
+    const HAS_INTERVAL_COLUMN = false;
 
     const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
     const grid = ()=> css('--muted','#6b7280')+'22';
 
+    const cols = HAS_INTERVAL_COLUMN
+      ? "created_at, rainfall_mm, rainfall_mm_interval"
+      : "created_at, rainfall_mm";
+
     const { data, error } = await supabase
       .from("weather_readings")  // or "weather-readings"
-      .select("created_at, rainfall_mm")
+      .select(cols)
       .order("created_at", { ascending: true });
 
     if (error) console.error(error);
 
-    // Sum per local day (last 30 days)
-    const totals = {};
-    const today = new Date();
-    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
+    // Group by local date (simple: use max cumulative per day if interval missing)
+    const dayTotals = new Map(); // key=YYYY-MM-DD, value=total mm
+    const dayMaxCum = new Map();
+
+    const toLocalDateKey = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,'0');
+      const day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    };
 
     data?.forEach(row => {
       const ts = new Date(row.created_at);
-      if (ts < cutoff) return;
-      const key = ts.toLocaleDateString();
-      totals[key] = (totals[key] || 0) + (row.rainfall_mm || 0);
+      const key = toLocalDateKey(ts);
+
+      if (HAS_INTERVAL_COLUMN && row.rainfall_mm_interval != null) {
+        const v = Number(row.rainfall_mm_interval) || 0;
+        dayTotals.set(key, (dayTotals.get(key) || 0) + v);
+      } else {
+        const cum = Number(row.rainfall_mm || 0);
+        dayMaxCum.set(key, Math.max(dayMaxCum.get(key) || 0, cum));
+      }
     });
 
-    const labels = Object.keys(totals);
-    const values = Object.values(totals);
+    if (!HAS_INTERVAL_COLUMN) {
+      dayMaxCum.forEach((maxCum, key) => dayTotals.set(key, maxCum));
+    }
+
+    // Keep last 30 days
+    const today = new Date();
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
+    const labels = [];
+    const values = [];
+    [...dayTotals.entries()].forEach(([key, val]) => {
+      const d = new Date(key + "T00:00:00");
+      if (d >= cutoff) { labels.push(key); values.push(val); }
+    });
 
     const ctx = document.getElementById("dailyRainChart").getContext("2d");
     const chart = new Chart(ctx, {
@@ -75,7 +107,7 @@
       data: {
         labels,
         datasets: [{
-          label: "Rainfall (mm)",
+          label: "Daily rainfall (mm)",
           data: values,
           backgroundColor: "rgba(56,189,248,0.6)"
         }]
