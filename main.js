@@ -9,7 +9,12 @@ const supabase = createClient(PROJECT_URL, ANON_KEY);
 const pad2 = n => String(n).padStart(2,'0');
 const clockFmt = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
-const gridColor = ()=> (css('--muted','#6b7280')) + '22';
+// Works with both HEX and HSL tokens
+const gridColor = () => {
+  const v = css('--muted','#6b7280');
+  if (v.startsWith('hsl')) return v.replace(')', ' / 0.22)');
+  return v + '22';
+};
 function setStatus(online){
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
@@ -70,9 +75,9 @@ function mkRainChart(ctx) {
     data: {
       labels: [],
       datasets: [
-        { type:'bar',  label:"Interval (mm)", data:[], backgroundColor:"rgba(56,189,248,0.35)", borderWidth:0, yAxisID:'y' },
-        { type:'line', label:"Cumulative (mm)", data:[], borderColor:cumColor,  backgroundColor:"rgba(56,189,248,0.18)", fill:true, tension:0.25, pointRadius:2, yAxisID:'y' },
-        { type:'line', label:"Rate (mm/h)",     data:[], borderColor:rateColor, backgroundColor:"rgba(16,185,129,0.18)", fill:false, tension:0.25, pointRadius:2, yAxisID:'y2' }
+        { type:'bar',  label:"Interval (mm)",    data:[], backgroundColor:"rgba(56,189,248,0.35)", borderWidth:0, yAxisID:'y' },
+        { type:'line', label:"Cumulative (mm)",  data:[], borderColor:cumColor,  backgroundColor:"rgba(56,189,248,0.18)", fill:true,  tension:0.25, pointRadius:2, yAxisID:'y' },
+        { type:'line', label:"Rate (mm/h)",      data:[], borderColor:rateColor, backgroundColor:"rgba(16,185,129,0.18)", fill:false, tension:0.25, pointRadius:2, yAxisID:'y2' }
       ]
     },
     options: {
@@ -92,6 +97,10 @@ const humChart  = mkLineChart(document.getElementById("humChart").getContext("2d
 const presChart = mkLineChart(document.getElementById("presChart").getContext("2d"), "hPa");
 const rainChart = mkRainChart(document.getElementById("rainChart").getContext("2d"));
 
+function tsOf(row){
+  // Prefer device-provided 'ts', else fallback to 'created_at'
+  return row.ts ?? row.created_at ?? new Date().toISOString();
+}
 function pushLinePoint(chart, ts, val){
   chart.data.labels.push(clockFmt(new Date(ts)));
   chart.data.datasets[0].data.push(val);
@@ -142,7 +151,7 @@ function renderTiles(row, rate) {
   if (row.rainfall_mm != null) { trend('rTrend', row.rainfall_mm - (prev.rainfall_mm ?? row.rainfall_mm), 0.01); upd('r', row.rainfall_mm, 3); prev.rainfall_mm=row.rainfall_mm; }
   if (rate            != null) { trend('rrTrend', rate - (prev.rate ?? rate), 0.01); upd('rr', rate, 3); prev.rate = rate; }
 
-  const ts = row.created_at ?? new Date().toISOString();
+  const ts = tsOf(row);
   const lu = document.getElementById('lastUpdated');
   if (lu) lu.textContent = `Last updated: ${new Date(ts).toLocaleDateString()} ${clockFmt(new Date(ts))}`;
   prev.ts = ts;
@@ -165,7 +174,7 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
 }
 
 (async function boot() {
-  const cols = "created_at, temperature, humidity, pressure, rainfall_mm, rainfall_rate_mmh";
+  const cols = "created_at, ts, temperature, humidity, pressure, rainfall_mm, rainfall_rate_mmh";
   await resolveTable(cols);
 
   // initial load (last 40, newest→oldest)
@@ -187,15 +196,16 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
     const ordered = rows.slice().reverse();
     let prevCum = null, prevTs = null;
     ordered.forEach(r => {
-      const { interval, rate } = deriveIntervalAndRate(r.rainfall_mm, r.created_at, prevCum, prevTs, r.rainfall_rate_mmh);
+      const ts = tsOf(r);
+      const { interval, rate } = deriveIntervalAndRate(r.rainfall_mm, ts, prevCum, prevTs, r.rainfall_rate_mmh);
       renderTiles(r, rate);
-      if (r.temperature != null) pushLinePoint(tempChart, r.created_at, Number(r.temperature));
-      if (r.humidity    != null) pushLinePoint(humChart,  r.created_at, Number(r.humidity));
-      if (r.pressure    != null) pushLinePoint(presChart, r.created_at, Number(r.pressure));
-      pushRainPoints(r.created_at, Number(r.rainfall_mm || 0), interval ?? 0, rate ?? 0);
+      if (r.temperature != null) pushLinePoint(tempChart, ts, Number(r.temperature));
+      if (r.humidity    != null) pushLinePoint(humChart,  ts, Number(r.humidity));
+      if (r.pressure    != null) pushLinePoint(presChart, ts, Number(r.pressure));
+      pushRainPoints(ts, Number(r.rainfall_mm || 0), interval ?? 0, rate ?? 0);
       prevCum = r.rainfall_mm ?? 0;
-      prevTs = r.created_at;
-      lastTimestamp = r.created_at;
+      prevTs = ts;
+      lastTimestamp = ts;
     });
     setStatus(true);
   }
@@ -205,15 +215,16 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
   await channel
     .on("postgres_changes", { event: "INSERT", schema: "public", table: resolvedTable }, (payload) => {
       const r = payload.new;
-      const { interval, rate } = deriveIntervalAndRate(r.rainfall_mm, r.created_at, prev.rainfall_mm, prev.ts, r.rainfall_rate_mmh);
+      const ts = tsOf(r);
+      const { interval, rate } = deriveIntervalAndRate(r.rainfall_mm, ts, prev.rainfall_mm, prev.ts, r.rainfall_rate_mmh);
       renderTiles(r, rate);
-      if (r.temperature != null) pushLinePoint(tempChart, r.created_at, Number(r.temperature));
-      if (r.humidity    != null) pushLinePoint(humChart,  r.created_at, Number(r.humidity));
-      if (r.pressure    != null) pushLinePoint(presChart, r.created_at, Number(r.pressure));
-      pushRainPoints(r.created_at, Number(r.rainfall_mm || 0), interval ?? 0, rate ?? 0);
-      lastTimestamp   = r.created_at;
+      if (r.temperature != null) pushLinePoint(tempChart, ts, Number(r.temperature));
+      if (r.humidity    != null) pushLinePoint(humChart,  ts, Number(r.humidity));
+      if (r.pressure    != null) pushLinePoint(presChart, ts, Number(r.pressure));
+      pushRainPoints(ts, Number(r.rainfall_mm || 0), interval ?? 0, rate ?? 0);
+      lastTimestamp   = ts;
       prev.rainfall_mm = r.rainfall_mm;
-      prev.ts          = r.created_at;
+      prev.ts          = ts;
       prev.rate        = rate;
       setStatus(true);
     })
