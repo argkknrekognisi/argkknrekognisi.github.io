@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 // ======================================================
 
-// set this true if your table has rainfall_mm_interval
+// set true if your table has rainfall_mm_interval
 const HAS_INTERVAL_COLUMN = false;
 
 let lastTimestamp = null;
@@ -15,8 +15,8 @@ let prev = { temperature: null, humidity: null, pressure: null, rainfall_mm: nul
 
 // ---------- Utils ----------
 const pad2 = n => String(n).padStart(2,'0');
-const formatClock = d => ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())};
-const formatLocalTime = iso => { const d = new Date(iso); return ${d.toLocaleDateString()} ${formatClock(d)}; };
+const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+const formatLocalTime = iso => { const d = new Date(iso); return `${d.toLocaleDateString()} ${formatClock(d)}`; };
 function setTrend(el, delta, epsilon = 0.01) {
   el.classList.remove('up','down','steady');
   if (delta > epsilon) { el.textContent = '↑'; el.classList.add('up'); }
@@ -139,27 +139,23 @@ const { data: rows, error } = await supabase
 if (error) console.error(error);
 
 if (rows?.length) {
-  // display oldest → newest
   const ordered = rows.slice().reverse();
   let prevCum = null;
 
   ordered.forEach(r => {
-    // compute interval if column absent
     let interval = 0;
     const cum = Number(r.rainfall_mm ?? 0);
     if (HAS_INTERVAL_COLUMN && r.rainfall_mm_interval != null) {
       interval = Number(r.rainfall_mm_interval);
     } else if (prevCum == null) {
-      interval = cum; // first point in window (could be 0 at the day start)
+      interval = cum;
     } else {
       interval = Math.max(0, cum - prevCum);
     }
     prevCum = cum;
 
-    // update tiles
     render(r);
 
-    // charts
     if (r.temperature != null) pushLinePoint(tempChart, r.created_at, Number(r.temperature));
     if (r.humidity    != null) pushLinePoint(humChart,  r.created_at, Number(r.humidity));
     if (r.pressure    != null) pushLinePoint(presChart, r.created_at, Number(r.pressure));
@@ -181,7 +177,6 @@ await channel
     table: "weather_readings"       // or "weather-readings"
   }, (payload) => {
     const r = payload.new;
-    // compute interval from cumulative if not provided
     const cum = Number(r.rainfall_mm ?? 0);
     let interval = 0;
     if (HAS_INTERVAL_COLUMN && r.rainfall_mm_interval != null) {
@@ -230,7 +225,6 @@ function render(r) {
     prev.pressure = r.pressure;
   }
   if (r.rainfall_mm != null) {
-    // show cumulative on the tile
     const el = document.getElementById("r");
     const trendEl = document.getElementById("rTrend");
     const prevVal = prev.rainfall_mm;
@@ -240,7 +234,7 @@ function render(r) {
   }
 
   const ts = r.created_at ?? new Date().toISOString();
-  document.getElementById("lastUpdated").textContent = Last updated: ${formatLocalTime(ts)};
+  document.getElementById("lastUpdated").textContent = `Last updated: ${formatLocalTime(ts)}`;
 }
 
 // ---------- Live clock ----------
@@ -278,7 +272,6 @@ const mo = new MutationObserver(() => {
   rainChart.options.scales.x.ticks.color = muted;
   rainChart.options.scales.x.grid.color = grid;
   rainChart.options.scales.y.ticks.color = muted;
-  rainChart.options.scales.y.grid.color = grid;
   rainChart.update('none');
 });
 mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
