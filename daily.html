@@ -8,8 +8,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="light">
-
-  <!-- Shared header mount -->
   <div id="site-header"></div>
 
   <main class="container">
@@ -17,7 +15,7 @@
       <h2>Daily Rainfall Totals</h2>
       <div class="meta">
         <div id="clock">--:--:--</div>
-        <div id="lastUpdated">Aggregated from 10-minute data</div>
+        <div id="lastUpdated">Aggregated from per-interval data</div>
       </div>
     </section>
 
@@ -27,35 +25,34 @@
     </section>
   </main>
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Header include (cache-busted) -->
-  <script type="module" src="partials/include.js?v=8"></script>
-
-  <!-- Daily page logic (final; cache-busted) -->
+  <!-- Load header include via import (no duplicate <script src>) -->
   <script type="module">
-    import { injectHeader } from './partials/include.js?v=8';
+    // ---------- Header include ----------
+    import { injectHeader } from './partials/include.js?v=13';
     await injectHeader();
 
-    // Live clock
-    (function startClock(){
-      const el = document.getElementById("clock");
-      const pad2 = n => String(n).padStart(2,'0');
-      const clockFmt = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-      setInterval(() => el.textContent = clockFmt(new Date()), 1000);
-    })();
+    // ---------- Live clock ----------
+    const pad2 = n => String(n).padStart(2,'0');
+    const clockFmt = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    const clockEl = document.getElementById("clock");
+    setInterval(() => clockEl.textContent = clockFmt(new Date()), 1000);
 
-    // ---- Supabase config (PUT YOUR VALUES) ----
-    const PROJECT_URL = "https://YOUR_PROJECT.supabase.co";
-    const ANON_KEY    = "YOUR_ANON_PUBLIC_KEY";
-    // If your table also stores per-interval values, set true
+    // ---------- Supabase config (your real values) ----------
+    const PROJECT_URL = "https://scbekobcwdxrfvdiofjp.supabase.co";
+    const ANON_KEY    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM";
+
+    // If your table also stores per-interval values, set true (column: rainfall_mm_interval)
     const HAS_INTERVAL_COLUMN = false;
+
+    // If your daily roll-over is at a specific hour (e.g., 07:00 WIB), set here
+    const DAILY_RESET_HOUR_LOCAL = 0; // 0 = midnight; set to 7 to match your ESP32 reset
 
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
     const supabase = createClient(PROJECT_URL, ANON_KEY);
 
-    // Small error banner helper
+    // ---------- Helpers ----------
     function showErrorBanner(msg) {
       let b = document.getElementById('errBanner');
       if (!b) {
@@ -73,11 +70,16 @@
       setTimeout(()=>{ if (b) b.remove(); }, 8000);
     }
 
-    // Theme helpers for chart tint
     const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
-    const grid = ()=> css('--muted','#6b7280') + '22';
+    const gridColor = () => {
+      const v = css('--muted','#6b7280');
+      return v.startsWith('hsl') ? v.replace(')', ' / 0.22)') : (v + '22');
+    };
 
-    // Try underscore table first, then hyphen
+    // Prefer device ts if present; else created_at
+    const tsOf = row => row.ts ?? row.created_at;
+
+    // Resolve table name underscore vs hyphen
     let resolvedTable = 'weather_readings';
     async function resolveTable(selectCols) {
       let r = await supabase.from('weather_readings').select(selectCols).limit(1);
@@ -88,14 +90,14 @@
       showErrorBanner('Cannot read table. Check RLS (SELECT) & table name.');
     }
 
-    // Build selection columns
+    // Build columns to fetch (include ts as fallback)
     const cols = HAS_INTERVAL_COLUMN
-      ? "created_at, rainfall_mm, rainfall_mm_interval"
-      : "created_at, rainfall_mm";
+      ? "created_at, ts, rainfall_mm, rainfall_mm_interval"
+      : "created_at, ts, rainfall_mm";
 
     await resolveTable(cols);
 
-    // Fetch all (ascending) so we can aggregate by local day
+    // Fetch all rows ascending (client-side aggregate)
     const { data, error } = await supabase
       .from(resolvedTable)
       .select(cols)
@@ -108,77 +110,26 @@
       }
     }
 
-    // Group into daily totals (local time). If no interval column, use daily max of cumulative.
-    const dayTotals = new Map();   // YYYY-MM-DD -> total mm
+    // ---- Aggregate by local day, with optional non-midnight reset ----
+    const dayTotals = new Map();   // key -> total mm
     const dayMaxCum = new Map();   // fallback when interval not available
 
-    const toLocalDateKey = (d) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth()+1).padStart(2,'0');
-      const day = String(d.getDate()).padStart(2,'0');
+    function dayKeyWithReset(date) {
+      // Shift by DAILY_RESET_HOUR_LOCAL so "day" starts at that hour
+      const d = new Date(date);
+      const shiftMs = DAILY_RESET_HOUR_LOCAL * 60 * 60 * 1000;
+      const shifted = new Date(d.getTime() - shiftMs);
+      const y = shifted.getFullYear();
+      const m = String(shifted.getMonth()+1).padStart(2,'0');
+      const day = String(shifted.getDate()).padStart(2,'0');
       return `${y}-${m}-${day}`;
-    };
-
-    (data || []).forEach(row => {
-      const ts = new Date(row.created_at);
-      const key = toLocalDateKey(ts);
-
-      if (HAS_INTERVAL_COLUMN && row.rainfall_mm_interval != null) {
-        const v = Number(row.rainfall_mm_interval) || 0;
-        dayTotals.set(key, (dayTotals.get(key) || 0) + v);
-      } else {
-        const cum = Number(row.rainfall_mm || 0);
-        dayMaxCum.set(key, Math.max(dayMaxCum.get(key) || 0, cum));
-      }
-    });
-
-    if (!HAS_INTERVAL_COLUMN) {
-      dayMaxCum.forEach((maxCum, key) => dayTotals.set(key, maxCum));
     }
 
-    // Keep last 30 days
-    const today = new Date();
-    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
+    (data || []).forEach(row => {
+      const tsISO = tsOf(row);
+      if (!tsISO) return;
+      const ts = new Date(tsISO);
+      const key = dayKeyWithReset(ts);
 
-    const labels = [];
-    const values = [];
-    [...dayTotals.entries()].sort(([a],[b]) => a.localeCompare(b)).forEach(([key, val]) => {
-      const d = new Date(key + "T00:00:00");
-      if (d >= cutoff) { labels.push(key); values.push(val); }
-    });
-
-    // Chart
-    const ctx = document.getElementById("dailyRainChart").getContext("2d");
-    const chart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: "Daily rainfall (mm)",
-          data: values,
-          backgroundColor: "rgba(56,189,248,0.6)"
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
-        scales: {
-          x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() } },
-          y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: grid() }, beginAtZero: true }
-        }
-      }
-    });
-
-    // Retint on theme change
-    const mo = new MutationObserver(() => {
-      chart.options.plugins.legend.labels.color = css('--text','#0f172a');
-      chart.options.scales.x.ticks.color = css('--muted','#6b7280');
-      chart.options.scales.x.grid.color = grid();
-      chart.options.scales.y.ticks.color = css('--muted','#6b7280');
-      chart.options.scales.y.grid.color = grid();
-      chart.update('none');
-    });
-    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  </script>
-</body>
-</html>
+      if (HAS_INTERVAL_COLUMN && row.rainfall_mm_interval != null) {
+        const v = N
