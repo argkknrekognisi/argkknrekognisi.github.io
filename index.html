@@ -8,8 +8,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="light">
-
-  <!-- Header injected by include.js -->
   <div id="site-header"></div>
 
   <main class="container">
@@ -25,63 +23,37 @@
       </div>
     </section>
 
-    <!-- Metrics -->
     <section class="metrics-grid">
-      <div class="metric">
-        <div class="label">Temp</div>
+      <div class="metric"><div class="label">Temp</div>
         <div class="value"><span id="t">⏳</span><span class="unit">°C</span><span id="tTrend" class="trend steady">—</span></div>
       </div>
-      <div class="metric">
-        <div class="label">Humidity</div>
+      <div class="metric"><div class="label">Humidity</div>
         <div class="value"><span id="h">⏳</span><span class="unit">%</span><span id="hTrend" class="trend steady">—</span></div>
       </div>
-      <div class="metric">
-        <div class="label">Pressure</div>
+      <div class="metric"><div class="label">Pressure</div>
         <div class="value"><span id="p">⏳</span><span class="unit">hPa</span><span id="pTrend" class="trend steady">—</span></div>
       </div>
-      <div class="metric">
-        <div class="label">Rainfall (Today)</div>
+      <div class="metric"><div class="label">Rainfall (Today)</div>
         <div class="value"><span id="r">⏳</span><span class="unit">mm</span><span id="rTrend" class="trend steady">—</span></div>
       </div>
-      <!-- NEW: Rate tile -->
-      <div class="metric">
-        <div class="label">Rain Rate</div>
+      <div class="metric"><div class="label">Rain Rate</div>
         <div class="value"><span id="rr">⏳</span><span class="unit">mm/h</span><span id="rrTrend" class="trend steady">—</span></div>
       </div>
     </section>
 
-    <!-- Charts -->
     <section class="charts-grid">
-      <div class="card chart-card">
-        <div class="chart-title">Temperature (°C)</div>
-        <canvas id="tempChart"></canvas>
-      </div>
-      <div class="card chart-card">
-        <div class="chart-title">Humidity (%)</div>
-        <canvas id="humChart"></canvas>
-      </div>
-      <div class="card chart-card">
-        <div class="chart-title">Pressure (hPa)</div>
-        <canvas id="presChart"></canvas>
-      </div>
-      <div class="card chart-card wide">
-        <div class="chart-title">Rainfall — Interval (bars), Cumulative & Rate</div>
-        <canvas id="rainChart"></canvas>
-      </div>
+      <div class="card chart-card"><div class="chart-title">Temperature (°C)</div><canvas id="tempChart"></canvas></div>
+      <div class="card chart-card"><div class="chart-title">Humidity (%)</div><canvas id="humChart"></canvas></div>
+      <div class="card chart-card"><div class="chart-title">Pressure (hPa)</div><canvas id="presChart"></canvas></div>
+      <div class="card chart-card wide"><div class="chart-title">Rainfall — Interval (bars), Cumulative & Rate</div><canvas id="rainChart"></canvas></div>
     </section>
   </main>
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- Shared header include (cache-busted) -->
-  <script type="module" src="partials/include.js?v=11"></script>
-
-  <!-- Dashboard logic (cache-busted) -->
   <script type="module">
-    import { injectHeader } from './partials/include.js?v=11';
+    import { injectHeader } from './partials/include.js?v=12';
     await injectHeader();
-    await import('./main.js?v=11');
+    await import('./main.js?v=12');
   </script>
 </body>
 </html>
