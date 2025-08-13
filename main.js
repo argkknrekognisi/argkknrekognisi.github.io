@@ -2,18 +2,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ===== Supabase (PUT YOUR PROJECT URL + ANON KEY) =====
 const supabase = createClient(
-  "https://scbekobcwdxrfvdiofjp.supabase.co",
+  "https://scbekobcwdxrfvdiofjp.supabase.co/rest/v1/weather_readings",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjYmVrb2Jjd2R4cmZ2ZGlvZmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ3MDg4ODgsImV4cCI6MjA3MDI4NDg4OH0.FTSxV5J-vPN59NCrplGRIEvk9NFZ3-0y8yya-YxKnjM"
 );
 // ======================================================
+
+// set this true if your table has rainfall_mm_interval
+const HAS_INTERVAL_COLUMN = false;
 
 let lastTimestamp = null;
 let prev = { temperature: null, humidity: null, pressure: null, rainfall_mm: null };
 
 // ---------- Utils ----------
 const pad2 = n => String(n).padStart(2,'0');
-const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-const formatLocalTime = iso => { const d = new Date(iso); return `${d.toLocaleDateString()} ${formatClock(d)}`; };
+const formatClock = d => ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())};
+const formatLocalTime = iso => { const d = new Date(iso); return ${d.toLocaleDateString()} ${formatClock(d)}; };
 function setTrend(el, delta, epsilon = 0.01) {
   el.classList.remove('up','down','steady');
   if (delta > epsilon) { el.textContent = '↑'; el.classList.add('up'); }
@@ -28,10 +31,51 @@ function setStatus(online) {
 }
 
 // ---------- Chart.js helpers ----------
-function getCSS(varName, fallback){ return getComputedStyle(document.body).getPropertyValue(varName).trim() || fallback; }
-function gridColor(){ return (getCSS('--muted','#6b7280')) + '22'; } // faint grid
-function mkChart(ctx, label) {
-  const border = getCSS('--value','#38bdf8');
+function css(varName, fallback){ return getComputedStyle(document.body).getPropertyValue(varName).trim() || fallback; }
+function gridColor(){ return (css('--muted','#6b7280')) + '22'; } // faint grid
+
+// Rain chart with 2 datasets: cumulative line + per-interval bars
+function mkRainChart(ctx) {
+  const lineColor = css('--value','#38bdf8');
+  return new Chart(ctx, {
+    type: "bar", // base bar so interval draws under the line
+    data: {
+      labels: [],
+      datasets: [
+        {
+          type: 'bar',
+          label: "Interval (mm / 10min)",
+          data: [],
+          backgroundColor: "rgba(56,189,248,0.35)",
+          borderWidth: 0,
+          yAxisID: 'y',
+        },
+        {
+          type: 'line',
+          label: "Cumulative (mm)",
+          data: [],
+          borderColor: lineColor,
+          backgroundColor: "rgba(56,189,248,0.18)",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 2,
+          yAxisID: 'y',
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
+      scales: {
+        x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() } },
+        y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function mkLineChart(ctx, label) {
+  const border = css('--value','#38bdf8');
   return new Chart(ctx, {
     type: "line",
     data: { labels: [], datasets: [{
@@ -40,23 +84,23 @@ function mkChart(ctx, label) {
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: getCSS('--text','#0f172a') } } },
+      plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
       scales: {
-        x: { ticks: { color: getCSS('--muted','#6b7280') }, grid: { color: gridColor() } },
-        y: { ticks: { color: getCSS('--muted','#6b7280') }, grid: { color: gridColor() } }
+        x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() } },
+        y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() } }
       }
     }
   });
 }
 
 // Create charts
-const tempChart = mkChart(document.getElementById("tempChart").getContext("2d"), "°C");
-const humChart  = mkChart(document.getElementById("humChart").getContext("2d"),  "%");
-const presChart = mkChart(document.getElementById("presChart").getContext("2d"), "hPa");
-const rainChart = mkChart(document.getElementById("rainChart").getContext("2d"), "mm");
+const tempChart = mkLineChart(document.getElementById("tempChart").getContext("2d"), "°C");
+const humChart  = mkLineChart(document.getElementById("humChart").getContext("2d"),  "%");
+const presChart = mkLineChart(document.getElementById("presChart").getContext("2d"), "hPa");
+const rainChart = mkRainChart(document.getElementById("rainChart").getContext("2d"));
 
 // Append point helper (keeps last 20)
-function pushPoint(chart, ts, val){
+function pushLinePoint(chart, ts, val){
   chart.data.labels.push(formatClock(new Date(ts)));
   chart.data.datasets[0].data.push(val);
   if (chart.data.labels.length > 20) {
@@ -66,22 +110,61 @@ function pushPoint(chart, ts, val){
   chart.update();
 }
 
+function pushRainPoints(ts, cumulative, interval){
+  const lbls = rainChart.data.labels;
+  const dsInterval = rainChart.data.datasets[0];
+  const dsCumul    = rainChart.data.datasets[1];
+  lbls.push(formatClock(new Date(ts)));
+  dsInterval.data.push(interval);
+  dsCumul.data.push(cumulative);
+  if (lbls.length > 20) {
+    lbls.shift();
+    dsInterval.data.shift();
+    dsCumul.data.shift();
+  }
+  rainChart.update();
+}
+
 // ---------- Initial load (preload last 20) ----------
+const selectCols = HAS_INTERVAL_COLUMN
+  ? "created_at, temperature, humidity, pressure, rainfall_mm, rainfall_mm_interval"
+  : "created_at, temperature, humidity, pressure, rainfall_mm";
+
 const { data: rows, error } = await supabase
   .from("weather_readings")          // if your table uses a hyphen: "weather-readings"
-  .select("*")
+  .select(selectCols)
   .order("created_at", { ascending: false })
   .limit(20);
 
 if (error) console.error(error);
 
 if (rows?.length) {
-  rows.reverse().forEach(r => {
+  // display oldest → newest
+  const ordered = rows.slice().reverse();
+  let prevCum = null;
+
+  ordered.forEach(r => {
+    // compute interval if column absent
+    let interval = 0;
+    const cum = Number(r.rainfall_mm ?? 0);
+    if (HAS_INTERVAL_COLUMN && r.rainfall_mm_interval != null) {
+      interval = Number(r.rainfall_mm_interval);
+    } else if (prevCum == null) {
+      interval = cum; // first point in window (could be 0 at the day start)
+    } else {
+      interval = Math.max(0, cum - prevCum);
+    }
+    prevCum = cum;
+
+    // update tiles
     render(r);
-    if (r.temperature != null) pushPoint(tempChart, r.created_at, Number(r.temperature));
-    if (r.humidity    != null) pushPoint(humChart,  r.created_at, Number(r.humidity));
-    if (r.pressure    != null) pushPoint(presChart, r.created_at, Number(r.pressure));
-    pushPoint(rainChart, r.created_at, Number(r.rainfall_mm ?? 0));
+
+    // charts
+    if (r.temperature != null) pushLinePoint(tempChart, r.created_at, Number(r.temperature));
+    if (r.humidity    != null) pushLinePoint(humChart,  r.created_at, Number(r.humidity));
+    if (r.pressure    != null) pushLinePoint(presChart, r.created_at, Number(r.pressure));
+    pushRainPoints(r.created_at, cum, interval);
+
     lastTimestamp = r.created_at;
   });
   setStatus(true);
@@ -97,20 +180,30 @@ await channel
     schema: "public",
     table: "weather_readings"       // or "weather-readings"
   }, (payload) => {
-    const row = payload.new;
-    if (row.created_at !== lastTimestamp) {
-      render(row);
-      if (row.temperature != null) pushPoint(tempChart, row.created_at, Number(row.temperature));
-      if (row.humidity    != null) pushPoint(humChart,  row.created_at, Number(row.humidity));
-      if (row.pressure    != null) pushPoint(presChart, row.created_at, Number(row.pressure));
-      pushPoint(rainChart, row.created_at, Number(row.rainfall_mm ?? 0));
-      lastTimestamp = row.created_at;
+    const r = payload.new;
+    // compute interval from cumulative if not provided
+    const cum = Number(r.rainfall_mm ?? 0);
+    let interval = 0;
+    if (HAS_INTERVAL_COLUMN && r.rainfall_mm_interval != null) {
+      interval = Number(r.rainfall_mm_interval);
+    } else {
+      const prevCum = prev.rainfall_mm == null ? 0 : Number(prev.rainfall_mm);
+      interval = Math.max(0, cum - prevCum);
+    }
+
+    if (r.created_at !== lastTimestamp) {
+      render(r);
+      if (r.temperature != null) pushLinePoint(tempChart, r.created_at, Number(r.temperature));
+      if (r.humidity    != null) pushLinePoint(humChart,  r.created_at, Number(r.humidity));
+      if (r.pressure    != null) pushLinePoint(presChart, r.created_at, Number(r.pressure));
+      pushRainPoints(r.created_at, cum, interval);
+      lastTimestamp = r.created_at;
       setStatus(true);
     }
   })
   .subscribe(status => console.log("Realtime status:", status));
 
-// ---------- Render ----------
+// ---------- Render tiles ----------
 function render(r) {
   if (r.temperature != null) {
     const el = document.getElementById("t");
@@ -137,6 +230,7 @@ function render(r) {
     prev.pressure = r.pressure;
   }
   if (r.rainfall_mm != null) {
+    // show cumulative on the tile
     const el = document.getElementById("r");
     const trendEl = document.getElementById("rTrend");
     const prevVal = prev.rainfall_mm;
@@ -146,7 +240,7 @@ function render(r) {
   }
 
   const ts = r.created_at ?? new Date().toISOString();
-  document.getElementById("lastUpdated").textContent = `Last updated: ${formatLocalTime(ts)}`;
+  document.getElementById("lastUpdated").textContent = Last updated: ${formatLocalTime(ts)};
 }
 
 // ---------- Live clock ----------
@@ -157,10 +251,34 @@ function render(r) {
 
 // ---------- Online/Offline watchdog ----------
 (function startWatchdog(){
-  const TIMEOUT_MS = 120000; // 2 minutes
+  const TIMEOUT_MS = 180000; // 3 minutes
   setInterval(() => {
     if (!lastTimestamp) return;
     const age = Date.now() - new Date(lastTimestamp).getTime();
     setStatus(age <= TIMEOUT_MS);
   }, 5000);
 })();
+
+// ---------- Retint on theme change ----------
+const mo = new MutationObserver(() => {
+  const text = css('--text','#0f172a');
+  const muted = css('--muted','#6b7280');
+  const grid = gridColor();
+
+  [tempChart, humChart, presChart].forEach(ch => {
+    ch.options.plugins.legend.labels.color = text;
+    ch.options.scales.x.ticks.color = muted;
+    ch.options.scales.x.grid.color = grid;
+    ch.options.scales.y.ticks.color = muted;
+    ch.options.scales.y.grid.color = grid;
+    ch.update('none');
+  });
+
+  rainChart.options.plugins.legend.labels.color = text;
+  rainChart.options.scales.x.ticks.color = muted;
+  rainChart.options.scales.x.grid.color = grid;
+  rainChart.options.scales.y.ticks.color = muted;
+  rainChart.options.scales.y.grid.color = grid;
+  rainChart.update('none');
+});
+mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
