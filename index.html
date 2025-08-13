@@ -3,57 +3,94 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Automatic Rain Gauge — Live</title>
+  <title>Automatic Rain Gauge KKN-DusunKamulyan Dashboard</title>
+
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body class="light">
+  <!-- Shared header mount -->
   <div id="site-header"></div>
 
   <main class="container">
     <section class="header-block">
-      <h1>Automatic Rain Gauge</h1>
+      <h2>Realtime Dashboard</h2>
+
+      <div class="statusbar">
+        <div id="statusDot" class="dot offline"></div>
+        <div id="statusText" class="status-text">OFFLINE</div>
+      </div>
+
       <div class="meta">
         <div id="clock">--:--:--</div>
-        <div id="lastUpdated">Waiting for data…</div>
-        <div class="status">
-          <span class="dot offline" id="statusDot"></span>
-          <span id="statusText">OFFLINE</span>
+        <div id="lastUpdated">Last updated: —</div>
+      </div>
+    </section>
+
+    <section class="card metrics-grid">
+      <div class="metric">
+        <div class="label">Temperature</div>
+        <div class="value">
+          <span id="t">⏳</span>
+          <span class="trend steady" id="tTrend">—</span>
+        </div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Humidity</div>
+        <div class="value">
+          <span id="h">⏳</span>
+          <span class="trend steady" id="hTrend">—</span>
+        </div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Pressure</div>
+        <div class="value">
+          <span id="p">⏳</span>
+          <span class="trend steady" id="pTrend">—</span>
+        </div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Rainfall</div>
+        <div class="value">
+          <span id="r">⏳</span>
+          <span class="unit">mm</span>
+          <span class="trend steady" id="rTrend">—</span>
         </div>
       </div>
     </section>
 
-    <section class="metrics-grid">
-      <div class="metric"><div class="label">Temp</div>
-        <div class="value"><span id="t">⏳</span><span class="unit">°C</span><span id="tTrend" class="trend steady">—</span></div>
+    <section class="card charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Temperature (°C)</div>
+        <canvas id="tempChart"></canvas>
       </div>
-      <div class="metric"><div class="label">Humidity</div>
-        <div class="value"><span id="h">⏳</span><span class="unit">%</span><span id="hTrend" class="trend steady">—</span></div>
+      <div class="chart-card">
+        <div class="chart-title">Humidity (%)</div>
+        <canvas id="humChart"></canvas>
       </div>
-      <div class="metric"><div class="label">Pressure</div>
-        <div class="value"><span id="p">⏳</span><span class="unit">hPa</span><span id="pTrend" class="trend steady">—</span></div>
+      <div class="chart-card">
+        <div class="chart-title">Pressure (hPa)</div>
+        <canvas id="presChart"></canvas>
       </div>
-      <div class="metric"><div class="label">Rainfall (Today)</div>
-        <div class="value"><span id="r">⏳</span><span class="unit">mm</span><span id="rTrend" class="trend steady">—</span></div>
+      <div class="chart-card">
+        <div class="chart-title">Rainfall (mm)</div>
+        <canvas id="rainChart"></canvas>
       </div>
-      <div class="metric"><div class="label">Rain Rate</div>
-        <div class="value"><span id="rr">⏳</span><span class="unit">mm/h</span><span id="rrTrend" class="trend steady">—</span></div>
-      </div>
-    </section>
-
-    <section class="charts-grid">
-      <div class="card chart-card"><div class="chart-title">Temperature (°C)</div><canvas id="tempChart"></canvas></div>
-      <div class="card chart-card"><div class="chart-title">Humidity (%)</div><canvas id="humChart"></canvas></div>
-      <div class="card chart-card"><div class="chart-title">Pressure (hPa)</div><canvas id="presChart"></canvas></div>
-      <div class="card chart-card wide"><div class="chart-title">Rainfall — Interval (bars), Cumulative & Rate</div><canvas id="rainChart"></canvas></div>
     </section>
   </main>
 
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Load shared header, then app logic -->
   <script type="module">
-    import { injectHeader } from './partials/include.js?v=13';
+    import { injectHeader } from './partials/include.js';
     await injectHeader();
-    await import('./main.js?v=13');
+    // after header is in, load the dashboard logic
+    import './main.js';
   </script>
 </body>
 </html>
