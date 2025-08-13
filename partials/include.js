@@ -8,7 +8,7 @@ export async function injectHeader() {
     const html = await res.text();
     mount.innerHTML = html;
 
-    // Active nav highlight
+    // Highlight current page
     const path = location.pathname.split('/').pop() || 'index.html';
     document.querySelectorAll('.nav-item[data-match]').forEach(a => {
       if (a.getAttribute('data-match') === path) a.classList.add('active');
@@ -28,7 +28,6 @@ function setupThemeToggle() {
   const toggle = document.getElementById('themeToggle');
   if (!toggle) return;
 
-  // Initial
   const isDark = localStorage.getItem('theme') === 'dark';
   document.body.classList.toggle('dark', isDark);
   toggle.checked = isDark;
