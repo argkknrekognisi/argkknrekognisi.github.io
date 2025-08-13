@@ -27,45 +27,90 @@
     </section>
   </main>
 
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <script type="module" src="partials/include.js"></script>
+  <!-- Header include (cache-busted) -->
+  <script type="module" src="partials/include.js?v=8"></script>
+
+  <!-- Daily page logic (final; cache-busted) -->
   <script type="module">
-    import { injectHeader } from './partials/include.js';
+    import { injectHeader } from './partials/include.js?v=8';
     await injectHeader();
 
     // Live clock
     (function startClock(){
       const el = document.getElementById("clock");
       const pad2 = n => String(n).padStart(2,'0');
-      const formatClock = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-      setInterval(() => el.textContent = formatClock(new Date()), 1000);
+      const clockFmt = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      setInterval(() => el.textContent = clockFmt(new Date()), 1000);
     })();
 
-    // Supabase read + chart
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-    const supabase = createClient("https://YOUR_PROJECT.supabase.co", "YOUR_ANON_PUBLIC_KEY");
-
-    // set true if your table has rainfall_mm_interval
+    // ---- Supabase config (PUT YOUR VALUES) ----
+    const PROJECT_URL = "https://YOUR_PROJECT.supabase.co";
+    const ANON_KEY    = "YOUR_ANON_PUBLIC_KEY";
+    // If your table also stores per-interval values, set true
     const HAS_INTERVAL_COLUMN = false;
 
-    const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
-    const grid = ()=> css('--muted','#6b7280')+'22';
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    const supabase = createClient(PROJECT_URL, ANON_KEY);
 
+    // Small error banner helper
+    function showErrorBanner(msg) {
+      let b = document.getElementById('errBanner');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'errBanner';
+        b.style.cssText = `
+          position: fixed; left: 12px; right: 12px; bottom: 12px;
+          background: #fee2e2; color:#991b1b; border:1px solid #fecaca;
+          padding:10px 12px; border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.15);
+          font: 600 13px/1.3 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; z-index: 9999;
+        `;
+        document.body.appendChild(b);
+      }
+      b.textContent = msg;
+      setTimeout(()=>{ if (b) b.remove(); }, 8000);
+    }
+
+    // Theme helpers for chart tint
+    const css = (v,f)=>getComputedStyle(document.body).getPropertyValue(v).trim()||f;
+    const grid = ()=> css('--muted','#6b7280') + '22';
+
+    // Try underscore table first, then hyphen
+    let resolvedTable = 'weather_readings';
+    async function resolveTable(selectCols) {
+      let r = await supabase.from('weather_readings').select(selectCols).limit(1);
+      if (!r.error) { resolvedTable = 'weather_readings'; return; }
+      r = await supabase.from('weather-readings').select(selectCols).limit(1);
+      if (!r.error) { resolvedTable = 'weather-readings'; return; }
+      console.error('Table read error:', r.error);
+      showErrorBanner('Cannot read table. Check RLS (SELECT) & table name.');
+    }
+
+    // Build selection columns
     const cols = HAS_INTERVAL_COLUMN
       ? "created_at, rainfall_mm, rainfall_mm_interval"
       : "created_at, rainfall_mm";
 
+    await resolveTable(cols);
+
+    // Fetch all (ascending) so we can aggregate by local day
     const { data, error } = await supabase
-      .from("weather_readings")  // or "weather-readings"
+      .from(resolvedTable)
       .select(cols)
       .order("created_at", { ascending: true });
 
-    if (error) console.error(error);
+    if (error) {
+      console.error("Initial load error:", error);
+      if (error.code === '42501' || error.code === 'PGRST301' || (error.message||'').toLowerCase().includes('permission')) {
+        showErrorBanner('Anon cannot SELECT. Add SELECT policy on your table.');
+      }
+    }
 
-    // Group by local date (simple: use max cumulative per day if interval missing)
-    const dayTotals = new Map(); // key=YYYY-MM-DD, value=total mm
-    const dayMaxCum = new Map();
+    // Group into daily totals (local time). If no interval column, use daily max of cumulative.
+    const dayTotals = new Map();   // YYYY-MM-DD -> total mm
+    const dayMaxCum = new Map();   // fallback when interval not available
 
     const toLocalDateKey = (d) => {
       const y = d.getFullYear();
@@ -74,7 +119,7 @@
       return `${y}-${m}-${day}`;
     };
 
-    data?.forEach(row => {
+    (data || []).forEach(row => {
       const ts = new Date(row.created_at);
       const key = toLocalDateKey(ts);
 
@@ -94,13 +139,15 @@
     // Keep last 30 days
     const today = new Date();
     const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30);
+
     const labels = [];
     const values = [];
-    [...dayTotals.entries()].forEach(([key, val]) => {
+    [...dayTotals.entries()].sort(([a],[b]) => a.localeCompare(b)).forEach(([key, val]) => {
       const d = new Date(key + "T00:00:00");
       if (d >= cutoff) { labels.push(key); values.push(val); }
     });
 
+    // Chart
     const ctx = document.getElementById("dailyRainChart").getContext("2d");
     const chart = new Chart(ctx, {
       type: 'bar',
