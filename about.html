@@ -14,27 +14,44 @@
     <section class="card">
       <h2>About Us</h2>
       <p class="muted">
-        Project coming soon.
+        This project is part of our KKN Tematik Rekognisi program — a low-power, solar-backed
+        automatic rain gauge built with ESP32 (Wemos D1 R32), a tipping-bucket & reed switch, and a BME280 sensor.
+        Data streams to Supabase and updates live on this site.
       </p>
 
       <div class="about-grid">
         <div class="about-item">
+          <h3>Goals</h3>
+          <ul>
+            <li>Provide real-time rainfall and weather readings</li>
+            <li>Demonstrate affordable IoT for communities</li>
+            <li>Publish open data for research & education</li>
+          </ul>
+        </div>
+        <div class="about-item">
+          <h3>Tech Stack</h3>
+          <ul>
+            <li>ESP32 (Wemos D1 R32), BME280, reed switch</li>
+            <li>Supabase (Postgres, Realtime)</li>
+            <li>Vanilla JS + Chart.js + GitHub Pages</li>
+          </ul>
+        </div>
+        <div class="about-item">
           <h3>Contact</h3>
           <ul>
-            <li>Instagram: <a href="https://instagram.com/kknr_dusunkamulyan" target="_blank" rel="noopener">@kknr_dusunkamulyan</a></li>
-            <li>TikTok: <a href="https://tiktok.com/@kknt.dusunkamulyan" target="_blank" rel="noopener">@kknt.dusunkamulyan</a></li>
-            <li>Email: kknrekognisi13@email.com</li>
+            <li>Instagram: <a href="https://instagram.com/YOUR_INSTAGRAM" target="_blank" rel="noopener">@YOUR_INSTAGRAM</a></li>
+            <li>TikTok: <a href="https://tiktok.com/@YOUR_TIKTOK" target="_blank" rel="noopener">@YOUR_TIKTOK</a></li>
+            <li>Email: your@email.com</li>
           </ul>
         </div>
       </div>
     </section>
   </main>
 
+  <script type="module" src="partials/include.js"></script>
   <script type="module">
     import { injectHeader } from './partials/include.js';
     await injectHeader();
   </script>
 </body>
 </html>
-
-
