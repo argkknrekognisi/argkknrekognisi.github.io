@@ -70,7 +70,7 @@ function mkRainChart(ctx) {
     data: {
       labels: [],
       datasets: [
-        { type:'bar',  label:"Interval (mm / 10min)", data:[], backgroundColor:"rgba(56,189,248,0.35)", borderWidth:0, yAxisID:'y' },
+        { type:'bar',  label:"Interval (mm)", data:[], backgroundColor:"rgba(56,189,248,0.35)", borderWidth:0, yAxisID:'y' },
         { type:'line', label:"Cumulative (mm)", data:[], borderColor:cumColor,  backgroundColor:"rgba(56,189,248,0.18)", fill:true, tension:0.25, pointRadius:2, yAxisID:'y' },
         { type:'line', label:"Rate (mm/h)",     data:[], borderColor:rateColor, backgroundColor:"rgba(16,185,129,0.18)", fill:false, tension:0.25, pointRadius:2, yAxisID:'y2' }
       ]
@@ -95,7 +95,7 @@ const rainChart = mkRainChart(document.getElementById("rainChart").getContext("2
 function pushLinePoint(chart, ts, val){
   chart.data.labels.push(clockFmt(new Date(ts)));
   chart.data.datasets[0].data.push(val);
-  if (chart.data.labels.length > 20) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+  if (chart.data.labels.length > 40) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
   chart.update();
 }
 function pushRainPoints(ts, cumulative, interval, rate){
@@ -107,7 +107,7 @@ function pushRainPoints(ts, cumulative, interval, rate){
   dsI.data.push(interval);
   dsC.data.push(cumulative);
   dsR.data.push(rate);
-  if (lbls.length > 20) { lbls.shift(); dsI.data.shift(); dsC.data.shift(); dsR.data.shift(); }
+  if (lbls.length > 40) { lbls.shift(); dsI.data.shift(); dsC.data.shift(); dsR.data.shift(); }
   rainChart.update();
 }
 
@@ -125,6 +125,12 @@ async function resolveTable(selectCols) {
 // ---------- Data flow ----------
 let lastTimestamp = null;
 let prev = { temperature:null, humidity:null, pressure:null, rainfall_mm:null, ts:null, rate:null };
+
+(function startClock(){
+  const el = document.getElementById("clock");
+  if (!el) return;
+  setInterval(()=> el.textContent = clockFmt(new Date()), 1000);
+})();
 
 function renderTiles(row, rate) {
   const upd = (id, v, f=2)=>{ const el=document.getElementById(id); if (el && v!=null) el.textContent = Number(v).toFixed(f); };
@@ -149,7 +155,7 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
   const curr = Number(currCum ?? 0);
   const prevC = Number(prevCum ?? 0);
   let interval = curr - prevC;
-  if (interval < 0) interval = curr; // daily reset
+  if (interval < 0) interval = curr; // daily reset case
   let rate = 0;
   if (prevTsISO) {
     const dtMin = Math.max(0.001, (new Date(currTsISO) - new Date(prevTsISO)) / 60000);
@@ -162,11 +168,12 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
   const cols = "created_at, temperature, humidity, pressure, rainfall_mm, rainfall_rate_mmh";
   await resolveTable(cols);
 
+  // initial load (last 40, newest→oldest)
   const { data: rows, error } = await supabase
     .from(resolvedTable)
     .select(cols)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(40);
 
   if (error) {
     console.error("Initial load error:", error);
@@ -212,8 +219,8 @@ function deriveIntervalAndRate(currCum, currTsISO, prevCum, prevTsISO, rateFromD
     })
     .subscribe((status)=>console.log("Realtime status:", status));
 
-  // watchdog — mark offline if older than 15 min
-  const TIMEOUT_MS = 15 * 60 * 1000;
+  // watchdog — mark offline if older than 3 min (since you post each minute)
+  const TIMEOUT_MS = 3 * 60 * 1000;
   setInterval(() => {
     if (!lastTimestamp) return;
     const age = Date.now() - new Date(lastTimestamp).getTime();
