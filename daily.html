@@ -132,4 +132,69 @@
       const key = dayKeyWithReset(ts);
 
       if (HAS_INTERVAL_COLUMN && row.rainfall_mm_interval != null) {
-        const v = N
+        const v = Number(row.rainfall_mm_interval) || 0;
+        dayTotals.set(key, (dayTotals.get(key) || 0) + v);
+      } else {
+        const cum = Number(row.rainfall_mm || 0);
+        dayMaxCum.set(key, Math.max(dayMaxCum.get(key) || 0, cum));
+      }
+    });
+
+    if (!HAS_INTERVAL_COLUMN) {
+      dayMaxCum.forEach((maxCum, key) => dayTotals.set(key, maxCum));
+    }
+
+    // Keep last 30 days
+    const today = new Date();
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() - 30);
+
+    const labels = [];
+    const values = [];
+    [...dayTotals.entries()]
+      .sort(([a],[b]) => a.localeCompare(b))
+      .forEach(([key, val]) => {
+        const d = new Date(key + "T00:00:00");
+        if (d >= cutoff) { labels.push(key); values.push(val); }
+      });
+
+    // Chart
+    const ctx = document.getElementById("dailyRainChart").getContext("2d");
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: "Daily rainfall (mm)",
+          data: values,
+          backgroundColor: "rgba(56,189,248,0.6)"
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: css('--text','#0f172a') } } },
+        scales: {
+          x: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() } },
+          y: { ticks: { color: css('--muted','#6b7280') }, grid: { color: gridColor() }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Retint on theme change
+    const mo = new MutationObserver(() => {
+      chart.options.plugins.legend.labels.color = css('--text','#0f172a');
+      chart.options.scales.x.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.x.grid.color = gridColor();
+      chart.options.scales.y.ticks.color = css('--muted','#6b7280');
+      chart.options.scales.y.grid.color = gridColor();
+      chart.update('none');
+    });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    // Last updated stamp
+    const last = labels.at(-1);
+    const lu = document.getElementById('lastUpdated');
+    if (last && lu) lu.textContent = `Last aggregated day: ${last}`;
+  </script>
+</body>
+</html>
