@@ -117,7 +117,7 @@ body {
 }
 .menu-empty { color: var(--muted); font-size: 0.9rem; }
 
-/* ---------------- Theme Switch (inside menu) ---------------- */
+/* Theme switch (inside menu) */
 .theme-switch {
   position: relative;
   display: inline-block;
